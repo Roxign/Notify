@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>7-11 商品卡特價雷達</title>
+  <meta name="description" content="自動查看蝦皮上低於面額的 7-11 商品卡">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎫</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div>
+        <h1>7-11 商品卡特價雷達</h1>
+        <p class="updated" id="updated">讀取中…</p>
+      </div>
+      <button type="button" class="btn" id="refresh">重新整理</button>
+    </header>
+
+    <section class="notice" id="notice" hidden></section>
+
+    <section class="stats" id="stats" hidden>
+      <div class="stat stat-hot"><span class="stat-num" id="stat-deals">–</span><span class="stat-label">件低於面額</span></div>
+      <div class="stat"><span class="stat-num" id="stat-best">–</span><span class="stat-label">目前最低折數</span></div>
+      <div class="stat"><span class="stat-num" id="stat-total">–</span><span class="stat-label">件商品卡</span></div>
+    </section>
+
+    <section class="controls" id="controls" hidden>
+      <input type="search" id="q" placeholder="篩選標題，例如 1000、官方" aria-label="篩選標題">
+      <select id="sort" aria-label="排序">
+        <option value="ratio">折數低→高</option>
+        <option value="price">價格低→高</option>
+        <option value="sales">銷量高→低</option>
+      </select>
+    </section>
+
+    <section id="deals-section" hidden>
+      <h2>低於面額</h2>
+      <ul class="list" id="deals"></ul>
+      <p class="empty" id="deals-empty" hidden>目前沒有低於面額的 7-11 商品卡，晚點再來看看。</p>
+    </section>
+
+    <section id="others-section" hidden>
+      <details>
+        <summary>其他 7-11 商品卡（<span id="others-count">0</span>）</summary>
+        <ul class="list" id="others"></ul>
+      </details>
+    </section>
+
+    <section class="quick">
+      <h2>直接到蝦皮搜尋</h2>
+      <p class="hint">依價格由低到高排序</p>
+      <div class="chips" id="quick"></div>
+    </section>
+
+    <footer class="foot">
+      <p>面額是從商品標題自動判斷的，可能會判斷錯，下單前請點進商品確認面額與賣家評價。遠低於面額的「序號」很可能是詐騙。</p>
+      <p>資料來源：蝦皮分潤計畫 Open API，由 GitHub Actions 每 30 分鐘更新一次。</p>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "seven-eleven-card-deals",
+  "private": true,
+  "description": "自動查看蝦皮上低於面額的 7-11 商品卡",
+  "scripts": {
+    "test": "node --test scripts/analyze.test.mjs",
+    "fetch": "node scripts/fetch-deals.mjs",
+    "serve": "python -m http.server 8000"
+  }
+}

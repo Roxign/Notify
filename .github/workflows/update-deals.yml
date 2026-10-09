@@ -1,0 +1,64 @@
+name: 更新特價資料並部署
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # 每 30 分鐘（UTC），GitHub 尖峰時段可能會延遲幾分鐘
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: 測試面額判斷
+        run: npm test
+
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      - name: 查詢蝦皮 7-11 商品卡
+        id: fetch
+        run: node scripts/fetch-deals.mjs
+        env:
+          SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
+          SHOPEE_APP_SECRET: ${{ secrets.SHOPEE_APP_SECRET }}
+          PREVIOUS_URL: ${{ steps.pages.outputs.base_url }}/data/deals.json
+
+      - name: 準備網站檔案
+        run: |
+          mkdir -p _site/data
+          cp index.html app.js style.css _site/
+          cp data/deals.json _site/data/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
+
+      # 查詢失敗時網頁仍會沿用上次的資料，但讓這次執行顯示失敗，GitHub 才會寄信通知
+      - name: 回報查詢失敗
+        if: steps.fetch.outputs.status == 'error'
+        run: |
+          echo "::error::蝦皮 API 查詢失敗，請看「查詢蝦皮 7-11 商品卡」步驟的輸出"
+          exit 1
