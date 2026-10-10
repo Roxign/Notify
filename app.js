@@ -9,6 +9,23 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const UA = navigator.userAgent;
+  const IS_ANDROID = /Android/i.test(UA);
+  const IS_IOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const IN_LINE = /\bLine\//i.test(UA);
+  const IN_APP_BROWSER = IN_LINE || /FBAN|FBAV|Instagram|MicroMessenger/i.test(UA);
+
+  // 手機上點商品直接開蝦皮 App：
+  // Android 用 intent:// 指定蝦皮 App（沒裝 App 時回到網頁版）；iPhone 的蝦皮網址本身就會開 App（Universal Link）
+  function shopeeLink(url) {
+    if (!IS_ANDROID) return { href: url, target: '_blank', rel: 'noopener noreferrer' };
+    const u = new URL(url);
+    return {
+      href: `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.shopee.tw;` +
+        `S.browser_fallback_url=${encodeURIComponent(url)};end`,
+    };
+  }
+
   let data = null;
   let lastLoadedAt = 0;
   let newIds = new Set();
@@ -113,7 +130,7 @@
     const trusted = it.deal && !it.warn;
 
     return h('li', { class: `item${it.deal ? ' deal' : ''}` },
-      h('a', { href: it.url, target: '_blank', rel: 'noopener noreferrer' },
+      h('a', shopeeLink(it.url),
         img,
         h('div', { class: 'body' },
           h('p', { class: 'title' }, it.title),
@@ -177,10 +194,24 @@
     const keywords = data?.keywords?.length ? data.keywords : DEFAULT_KEYWORDS;
     $('quick').replaceChildren(...keywords.map((k) => h('a', {
       class: 'chip',
-      href: `https://shopee.tw/search?keyword=${encodeURIComponent(k)}&order=asc&sortBy=price`,
-      target: '_blank',
-      rel: 'noopener noreferrer',
+      ...shopeeLink(`https://shopee.tw/search?keyword=${encodeURIComponent(k)}&order=asc&sortBy=price`),
     }, k)));
+  }
+
+  // LINE、Facebook 等 App 內建的瀏覽器不會把蝦皮連結交給蝦皮 App，提示改用手機的瀏覽器
+  function renderAppTip() {
+    if (IN_APP_BROWSER) {
+      const external = new URL(location.href);
+      external.searchParams.set('openExternalBrowser', '1'); // LINE 看到這個參數會改用外部瀏覽器開
+      $('app-tip').replaceChildren(
+        h('strong', null, '在 App 內建的瀏覽器裡，點商品不會跳到蝦皮 App'),
+        IN_LINE
+          ? h('p', null, h('a', { href: external.href }, '改用手機的瀏覽器開啟這個網頁'))
+          : h('p', null, '請點右上角的選單，選「用瀏覽器開啟」。'));
+      $('app-tip').hidden = false;
+    } else if (IS_IOS) {
+      $('ios-tip').hidden = false;
+    }
   }
 
   async function load() {
@@ -218,5 +249,6 @@
     if (document.visibilityState === 'visible' && Date.now() - lastLoadedAt > AUTO_RELOAD_MS) load();
   });
 
+  renderAppTip();
   load();
 })();
