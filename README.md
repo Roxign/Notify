@@ -52,6 +52,30 @@ AI 的判斷只是補充：它給的面額一定要真的出現在標題或規�
 - Repo 的 **Settings → Pages** 設定為 **Deploy from a branch → gh-pages / (root)**。
 - 推送用的是這台電腦 Git 存的 GitHub 帳號（Roxign）。
 
+## LINE 報單追蹤 bot（bot.py）
+
+LINE 傳「通關151197 艙號0169」給 bot，它會每分鐘查一次關港貿單一窗口的報單狀態，有變化就推播，放行後停止。
+
+- 在背景執行：登入 Windows 時由工作排程器用 `pythonw` 啟動（沒有視窗），當掉 1 分鐘後自動重啟。
+- ngrok：啟動時沿用已在跑的 tunnel，沒有就自己開；之後每分鐘檢查，tunnel 斷了會重開。
+- LINE webhook：拿到 ngrok 網址後，透過 Messaging API 自動把 webhook 改成 `<ngrok 網址>/callback` 並測試，不用再去 LINE Developers 後台手動貼。
+- 追蹤中的報單會存到 `E:\line-bot\tracking.json`，電腦重開後會接著追蹤。
+- 紀錄檔：`E:\line-bot\bot.log`
+
+設定：
+
+1. `pip install -r requirements.txt`
+2. 把 `.env.example` 複製成 `.env`，填入 LINE 的 channel access token 和 channel secret（`.env` 不會上傳到 GitHub）
+3. 建立背景排程：
+
+   ```bash
+   python bot.py --install-task
+   ```
+
+   之後每次登入 Windows 都會自動啟動。要馬上啟動：`schtasks /Run /TN LINE報單追蹤bot`；移除排程：`python bot.py --remove-task`。
+
+手動在終端機執行 `python bot.py` 也可以（會同時在畫面上顯示紀錄）；背景版本已在跑的話，手動執行的會直接結束。
+
 ## 注意事項
 
 - 電腦要開著、而且登入 Windows，排程才會跑；網頁超過 3 小時沒更新會顯示提示。
