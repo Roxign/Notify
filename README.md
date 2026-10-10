@@ -2,6 +2,8 @@
 
 打開網頁就能看到蝦皮上**低於面額**的 7-11 商品卡，按折數排好，點一下直接到商品頁。
 
+**網頁：https://h3902340.github.io/Notify/**
+
 ## 運作方式
 
 蝦皮的搜尋要登入才能用，也會擋掉伺服器發出的查詢，所以查詢在你自己的電腦上跑：
@@ -44,21 +46,17 @@ AI 的判斷只是補充：它給的面額一定要真的出現在標題或規�
 | `npm run serve` | 在 http://localhost:8000 預覽網頁 |
 | `npm test` | 測試面額判斷規則 |
 
-## 放到 GitHub Pages
+## GitHub Pages
 
-1. 在 GitHub 建一個 **public** repo，然後：
+- `main` 分支放程式碼；`gh-pages` 分支放網頁和資料，每次 `npm run update` 都會用一個新的 commit 整個覆蓋。
+- Repo 的 **Settings → Pages** 設定為 **Deploy from a branch → gh-pages / (root)**。
+- 這台電腦的 Git 預設憑證是另一個 GitHub 帳號，所以這個 repo 另外設定成用 `gh` 登入的帳號推送：
 
-   ```bash
-   git remote add origin https://github.com/<你的帳號>/<repo 名稱>.git
-   ```
+  ```bash
+  git config --local --get-all credential.https://github.com.helper
+  ```
 
-   ```bash
-   git push -u origin main
-   ```
-
-2. 執行一次 `npm run update`，它會建立 `gh-pages` 分支。
-3. Repo → **Settings → Pages → Build and deployment**：Source 選 **Deploy from a branch**，分支選 **gh-pages**、資料夾 **/(root)**。
-4. 打開 `https://<你的帳號>.github.io/<repo 名稱>/`，可以加到手機主畫面。
+  應該會看到 `!gh auth git-credential`。如果 `gh` 登出了，推送會失敗，執行 `gh auth login` 重新登入即可。
 
 ## 注意事項
 
