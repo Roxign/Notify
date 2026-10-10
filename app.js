@@ -2,7 +2,7 @@
   'use strict';
 
   const DEFAULT_KEYWORDS = ['7-11 商品卡', '統一超商 商品卡', '7-ELEVEN 商品卡', '711 禮物卡', '統一超商 禮券'];
-  const STALE_MS = 2 * 60 * 60 * 1000;
+  const STALE_MS = 3 * 60 * 60 * 1000;
   const AUTO_RELOAD_MS = 10 * 60 * 1000;
   const SEEN_KEY = 'seen-deal-ids';
   const BASE_TITLE = document.title;
@@ -63,14 +63,6 @@
     return `${Math.floor(hr / 24)} 天前`;
   }
 
-  function readmeUrl() {
-    const { hostname, pathname } = location;
-    if (!hostname.endsWith('.github.io')) return null;
-    const user = hostname.slice(0, -'.github.io'.length);
-    const repo = pathname.split('/').filter(Boolean)[0] || hostname;
-    return `https://github.com/${user}/${repo}#readme`;
-  }
-
   function showNotice(kind, title, ...body) {
     const box = $('notice');
     box.className = `notice${kind === 'error' ? ' error' : ''}`;
@@ -82,20 +74,7 @@
     $('notice').hidden = true;
     const dataTime = data.dataUpdatedAt || data.updatedAt;
 
-    if (data.status === 'not_configured') {
-      const url = readmeUrl();
-      showNotice(
-        'warn',
-        '還沒設定蝦皮 API 金鑰，所以還不能自動查詢',
-        '設定好之後，這頁就會每 30 分鐘自動更新特價清單：',
-        h('ol', null,
-          h('li', null, '到蝦皮分潤計畫（affiliate.shopee.tw）申請 Open API，取得 AppID 和 Secret'),
-          h('li', null, '在 GitHub repo 的 Settings → Secrets and variables → Actions 新增 SHOPEE_APP_ID 與 SHOPEE_APP_SECRET'),
-          h('li', null, '到 Actions 頁面手動執行一次「更新特價資料並部署」')),
-        url ? h('p', null, '詳細步驟請看 ', h('a', { href: url, target: '_blank', rel: 'noopener' }, 'README')) : null,
-        h('p', null, '在那之前，可以先用下方「直接到蝦皮搜尋」的連結手動查看。'),
-      );
-    } else if (data.status === 'error') {
+    if (data.status === 'error') {
       showNotice(
         'error',
         '最近一次自動查詢失敗',
@@ -106,10 +85,10 @@
       showNotice(
         'warn',
         `資料已經 ${timeAgo(dataTime)}沒有更新`,
-        h('p', null, 'GitHub Actions 的排程可能被暫停了（repo 60 天沒有活動會自動停用），到 Actions 頁面重新啟用即可。'),
+        h('p', null, '負責查詢的電腦可能沒開機，或排程停止了。可以先用下方「直接到蝦皮搜尋」手動查看。'),
       );
-    } else if (data.message) {
-      showNotice('warn', '部分關鍵字查詢失敗', h('p', null, data.message));
+    } else if (data.ai?.message) {
+      showNotice('warn', '這次沒有用到本機 AI', h('p', null, `${data.ai.message}。面額只用規則判斷，可能有些商品沒判斷出來。`));
     }
   }
 
@@ -123,7 +102,7 @@
   }
 
   function renderItem(it) {
-    const meta = [it.shop, it.sales ? `已售 ${it.sales.toLocaleString('zh-TW')}` : '', it.rating ? `★${it.rating.toFixed(1)}` : '']
+    const meta = [it.official ? `官方｜${it.shop}` : it.shop, it.sales ?`已售 ${it.sales.toLocaleString('zh-TW')}` : '', it.rating ? `★${it.rating.toFixed(1)}` : '']
       .filter(Boolean)
       .join(' · ');
     const priceText = it.priceMax > it.price ? `${money(it.price)} – ${money(it.priceMax)}` : money(it.price);
@@ -187,6 +166,9 @@
     $('stat-best').textContent = best ? best.zhe : '–';
     $('stat-total').textContent = data.items.length;
     document.title = deals.length ? `(${deals.length}) ${BASE_TITLE}` : BASE_TITLE;
+    $('ai-info').textContent = data.ai?.model && !data.ai.message
+      ? `面額先用規則判斷，判斷不出來的交給本機 AI（${data.ai.model}）。`
+      : '';
 
     renderLists();
   }
@@ -220,7 +202,7 @@
     } catch (err) {
       $('updated').textContent = '讀取失敗';
       showNotice('error', '讀不到特價資料', h('p', null,
-        `data/deals.json 載入失敗（${err.message}）。如果是直接雙擊打開 index.html，請改用本機伺服器或 GitHub Pages 的網址開啟。`));
+        `data/deals.json 載入失敗（${err.message}）。還沒查詢過的話，請先在電腦上執行 npm run update；如果是直接雙擊打開 index.html，請改用 npm run serve 或 GitHub Pages 的網址開啟。`));
     } finally {
       btn.disabled = false;
       btn.textContent = '重新整理';

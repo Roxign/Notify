@@ -4,7 +4,12 @@
   "description": "自動查看蝦皮上低於面額的 7-11 商品卡",
   "scripts": {
     "test": "node --test scripts/analyze.test.mjs",
-    "fetch": "node scripts/fetch-deals.mjs",
+    "login": "node scripts/login.mjs",
+    "update": "node scripts/update.mjs",
+    "schedule": "node scripts/schedule.mjs",
     "serve": "python -m http.server 8000"
+  },
+  "dependencies": {
+    "playwright-core": "^1.64.0"
   }
 }
