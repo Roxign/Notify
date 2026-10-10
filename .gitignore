@@ -7,3 +7,4 @@ Thumbs.db
 desktop.ini
 data/deals.json
 __pycache__/
+data/bot.json

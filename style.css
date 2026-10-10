@@ -210,7 +210,108 @@ details[open] summary { margin-bottom: 10px; }
 .foot { margin-top: 36px; color: var(--muted); font-size: .8rem; }
 .foot p { margin: 4px 0; }
 
+/* ── 分頁切換 ── */
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.tab {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 16px;
+  min-height: 76px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.tab:hover { border-color: var(--accent); }
+.tab[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.tab-title { font-size: 1.15rem; font-weight: 700; }
+.tab[aria-selected="true"] .tab-title { color: var(--accent); }
+.tab-sub { font-size: .8rem; color: var(--muted); }
+
+/* ── 通關查詢 ── */
+.card {
+  margin-top: 18px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.card h2 { margin: 0 0 10px; }
+.card .hint { margin: 10px 0 0; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.row input { flex: 1; min-width: 0; }
+
+.card input, .track-form input {
+  font: inherit;
+  font-size: 16px; /* 避免 iOS 自動放大 */
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+
+.track-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.track-form label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+.track-form .row { grid-column: 1 / -1; }
+.track-form .row .btn { flex: 1; padding: 12px 14px; font-size: 1rem; }
+
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.05); }
+
+.msg { margin: 6px 0 0; white-space: pre-wrap; font-size: .9rem; }
+
+.result { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.result table { width: 100%; border-collapse: collapse; font-size: .8rem; margin-top: 8px; display: block; overflow-x: auto; }
+.result td { border-bottom: 1px solid var(--line); padding: 4px 6px; white-space: nowrap; }
+
+.track-item {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+}
+.track-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.track-head .title { font-weight: 700; }
+.btn.small { padding: 4px 10px; font-size: .8rem; }
+
+.info { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 12px; font-size: .85rem; }
+.info dt { color: var(--muted); }
+.info dd { margin: 0; overflow-wrap: anywhere; }
+.ok { color: var(--good); }
+.bad { color: var(--bad); }
+
+.log-box summary { cursor: pointer; font-weight: 600; margin: 24px 0 10px; }
+.log {
+  margin: 0;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: .75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 420px) {
+  .tab { padding: 12px; min-height: 68px; }
+  .tab-title { font-size: 1.05rem; }
   .stat-num { font-size: 1.25rem; }
   .item a { grid-template-columns: 64px 1fr; gap: 10px; }
   .thumb { width: 64px; height: 64px; }

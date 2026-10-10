@@ -7,7 +7,7 @@
     "login": "node scripts/login.mjs",
     "update": "node scripts/update.mjs",
     "schedule": "node scripts/schedule.mjs",
-    "serve": "python -m http.server 8000"
+    "serve": "python -m http.server 8000 --bind 127.0.0.1"
   },
   "dependencies": {
     "playwright-core": "^1.64.0"

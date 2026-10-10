@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import os
@@ -9,12 +10,14 @@ import time
 import threading
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from functools import wraps
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
 import requests as http_requests
-from flask import Flask, request, abort
+from flask import Flask, request, abort, jsonify
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -55,10 +58,17 @@ LINE_BOT_TOKEN = os.environ.get("LINE_BOT_TOKEN", "")
 LINE_BOT_SECRET = os.environ.get("LINE_BOT_SECRET", "")
 DEV_USER_IDS = [u.strip() for u in os.environ.get("DEV_USER_IDS", "").split(",") if u.strip()]
 
+# Web page (通關查詢 tab on GitHub Pages) → bot API. Every /api call needs this key.
+WEB_API_KEY = os.environ.get("WEB_API_KEY", "")
+WEB_URL = os.environ.get("WEB_URL", "https://roxign.github.io/Notify/")
+WEB_ORIGINS = {o.strip() for o in os.environ.get("WEB_ORIGINS", "https://roxign.github.io,http://localhost:8000").split(",")}
+
 # Log file and tracking state (kept off OneDrive)
 BOT_HOME = Path(os.environ.get("BOT_HOME", r"E:\line-bot"))
 LOG_FILE = BOT_HOME / "bot.log"
 STATE_FILE = BOT_HOME / "tracking.json"
+# Current ngrok URL for the web page; published to GitHub Pages with scripts/publish.mjs
+BOT_INFO_FILE = BASE_DIR / "data" / "bot.json"
 TASK_NAME = "LINE報單追蹤bot"
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -73,6 +83,11 @@ PORT = 5000
 NGROK_API_URL = "http://localhost:4040/api/tunnels"
 _ngrok_url: Optional[str] = None
 _ngrok_proc: Optional[subprocess.Popen] = None
+_publish_enabled = "--no-publish" not in sys.argv
+
+# Shown on the web page's debug panel
+_started_at = ""
+_webhook_status: Dict = {"endpoint": None, "ok": None, "checkedAt": None, "message": ""}
 
 # Child processes (ngrok, chromedriver) must not pop up console windows under pythonw
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -87,6 +102,10 @@ _line_config = Configuration(access_token=LINE_BOT_TOKEN)
 _executor = ThreadPoolExecutor(max_workers=4)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
 
 def _push_text(to: str, text: str) -> None:
     with ApiClient(_line_config) as api_client:
@@ -122,15 +141,24 @@ def parse_query(text: str) -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
-# Registry: (vsl_reg_no, mft_no) -> {"subscribers": set of push_to IDs, "latest_msg": str|None}
+# Registry: (vsl_reg_no, mft_no) -> {"subscribers": set of push_to IDs, "latest_msg": str|None,
+#   "source": "line"|"web", "started_at": iso str, "last_checked_at": iso str|None}
 _poll_registry: Dict = {}
 _registry_lock = threading.Lock()
 _search_lock = threading.Lock()   # only one Chrome session at a time
 
 
+def _new_entry(subscribers: Set[str], source: str, started_at: Optional[str] = None) -> Dict:
+    return {"subscribers": set(subscribers), "latest_msg": None, "source": source,
+            "started_at": started_at or _now(), "last_checked_at": None}
+
+
 def _save_state() -> None:
     """Persist tracked containers so tracking resumes after a restart. Caller holds _registry_lock."""
-    data = {f"{vsl}|{mft}": sorted(e["subscribers"]) for (vsl, mft), e in _poll_registry.items()}
+    data = {
+        f"{vsl}|{mft}": {"subscribers": sorted(e["subscribers"]), "source": e["source"], "started_at": e["started_at"]}
+        for (vsl, mft), e in _poll_registry.items()
+    }
     try:
         tmp = STATE_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -147,10 +175,13 @@ def _resume_tracking() -> None:
     except Exception as exc:
         log.warning(f"[state] Could not read {STATE_FILE}: {exc}")
         return
-    for key_str, subs in data.items():
+    for key_str, saved in data.items():
         vsl_reg_no, mft_no = key_str.split("|", 1)
+        if isinstance(saved, list):   # older format: just the subscriber list
+            saved = {"subscribers": saved}
         with _registry_lock:
-            _poll_registry[(vsl_reg_no, mft_no)] = {"subscribers": set(subs), "latest_msg": None}
+            _poll_registry[(vsl_reg_no, mft_no)] = _new_entry(
+                saved.get("subscribers", []), saved.get("source", "line"), saved.get("started_at"))
         _executor.submit(_poll_until_released, vsl_reg_no, mft_no)
     if data:
         log.info(f"[state] Resumed {len(data)} tracking task(s) from before the restart")
@@ -172,16 +203,21 @@ def _push_to_subscribers(key: tuple, msg: str) -> None:
 
 
 def _poll_until_released(vsl_reg_no: str, mft_no: str) -> None:
-    """Poll every 60 s; push to all subscribers when new records appear; stop on 放行."""
+    """Poll every 60 s; push to all subscribers when new records appear; stop on 放行 or when removed."""
     key = (vsl_reg_no, mft_no)
+    with _registry_lock:
+        entry = _poll_registry.get(key)
+    if entry is None:
+        return
     prev_snapshot: Optional[frozenset] = None
     try:
-        while True:
+        while _poll_registry.get(key) is entry:   # 停止追蹤 from the web removes the entry
             try:
                 found, msg, records = search_container(vsl_reg_no, mft_no)
             except Exception as exc:
                 _push_to_subscribers(key, f"系統錯誤：{exc}")
                 break
+            entry["last_checked_at"] = _now()
 
             if not found:
                 if prev_snapshot is None:   # first attempt — always report and stop
@@ -202,7 +238,8 @@ def _poll_until_released(vsl_reg_no: str, mft_no: str) -> None:
             time.sleep(SEARCH_INTERVAL)
     finally:
         with _registry_lock:
-            _poll_registry.pop(key, None)
+            if _poll_registry.get(key) is entry:
+                _poll_registry.pop(key)
             _save_state()
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
@@ -218,10 +255,36 @@ def callback():
     return "OK"
 
 
+def _start_tracking(vsl_reg_no: str, mft_no: str, subscribers: Set[str], source: str) -> Tuple[bool, str]:
+    """Add subscribers to an existing task, or start a new one. Returns (already_tracking, latest_msg)."""
+    key = (vsl_reg_no, mft_no)
+    with _registry_lock:
+        if key in _poll_registry:
+            _poll_registry[key]["subscribers"] |= subscribers
+            latest = _poll_registry[key]["latest_msg"] or f"海關{vsl_reg_no}\n艙號{mft_no}\n⏳ 搜尋中..."
+            already_tracking = True
+        else:
+            _poll_registry[key] = _new_entry(subscribers | set(DEV_USER_IDS), source)
+            latest = ""
+            already_tracking = False
+        _save_state()
+    if not already_tracking:
+        _executor.submit(_poll_until_released, vsl_reg_no, mft_no)
+    return already_tracking, latest
+
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event: MessageEvent) -> None:
     text = event.message.text.strip()
     push_to = _push_target(event)
+
+    # ── 網頁 command: 1:1 chat with a dev user → login link for the web page ──
+    if text in ("網頁", "後台") and event.source.type == "user" and event.source.user_id in DEV_USER_IDS:
+        if WEB_API_KEY:
+            _reply_text(event.reply_token, f"通關查詢網頁（已帶入密碼，請勿轉傳）：\n{WEB_URL}#customs&key={WEB_API_KEY}")
+        else:
+            _reply_text(event.reply_token, "網頁功能未啟用：.env 裡沒有設定 WEB_API_KEY")
+        return
 
     # ── 狀態 command: report all tasks this user/group is subscribed to ────
     if "狀態" in text:
@@ -249,29 +312,119 @@ def handle_message(event: MessageEvent) -> None:
         )
         return
 
-    key = (vsl_reg_no, mft_no)
-    with _registry_lock:
-        if key in _poll_registry:
-            _poll_registry[key]["subscribers"].add(push_to)
-            latest = _poll_registry[key]["latest_msg"] or f"海關{vsl_reg_no}\n艙號{mft_no}\n⏳ 搜尋中..."
-            already_tracking = True
-        else:
-            _poll_registry[key] = {"subscribers": {push_to} | set(DEV_USER_IDS), "latest_msg": None}
-            already_tracking = False
-        _save_state()
-
+    already_tracking, latest = _start_tracking(vsl_reg_no, mft_no, {push_to}, "line")
     if already_tracking:
         _reply_text(
             event.reply_token,
             f"✅ 已加入追蹤\n海關：{vsl_reg_no}\n艙號：{mft_no}\n目前狀態:\n{latest}",
         )
     else:
-        # Reply immediately (uses reply token = free); polling loop starts afterwards.
+        # Reply with the (free) reply token; the polling loop has already been queued.
         _reply_text(
             event.reply_token,
             f"🔍 已開始追蹤報單狀態\n海關：{vsl_reg_no}\n艙號：{mft_no}\n每分鐘自動刷新，放行後停止",
         )
-        _executor.submit(_poll_until_released, vsl_reg_no, mft_no)
+
+# ── Web API (通關查詢 tab) ─────────────────────────────────────────────────────
+
+QUERY_PART = re.compile(r"[A-Za-z0-9]{1,20}")
+
+
+@app.after_request
+def _cors(resp):
+    origin = request.headers.get("Origin", "")
+    if request.path.startswith("/api/") and origin in WEB_ORIGINS:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Vary"] = "Origin"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Api-Key, ngrok-skip-browser-warning"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Max-Age"] = "600"
+    return resp
+
+
+def _require_key(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not WEB_API_KEY:
+            return jsonify(error="網頁功能未啟用：.env 裡沒有設定 WEB_API_KEY"), 503
+        if not hmac.compare_digest(request.headers.get("X-Api-Key", ""), WEB_API_KEY):
+            return jsonify(error="密碼錯誤"), 401
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def _query_from_body() -> Tuple[Optional[str], Optional[str]]:
+    body = request.get_json(silent=True) or {}
+    vsl, mft = str(body.get("vsl", "")).strip(), str(body.get("mft", "")).strip()
+    if QUERY_PART.fullmatch(vsl) and QUERY_PART.fullmatch(mft):
+        return vsl, mft
+    return None, None
+
+
+@app.get("/api/status")
+@_require_key
+def api_status():
+    with _registry_lock:
+        tracking = [
+            {"vsl": vsl, "mft": mft, "subscribers": len(e["subscribers"]), "source": e["source"],
+             "startedAt": e["started_at"], "lastCheckedAt": e["last_checked_at"], "latestMsg": e["latest_msg"]}
+            for (vsl, mft), e in _poll_registry.items()
+        ]
+    return jsonify(startedAt=_started_at, ngrokUrl=_ngrok_url, webhook=_webhook_status,
+                   devUsers=len(DEV_USER_IDS), searchBusy=_search_lock.locked(), tracking=tracking)
+
+
+@app.post("/api/track")
+@_require_key
+def api_track():
+    vsl, mft = _query_from_body()
+    if not vsl:
+        return jsonify(error="通關號碼和艙號只能是英數字"), 400
+    already, _ = _start_tracking(vsl, mft, set(), "web")
+    log.info(f"[web] Track {vsl}/{mft} ({'already tracking' if already else 'started'})")
+    return jsonify(added=not already, message="已經在追蹤了" if already else "已開始追蹤，有變化會用 LINE 通知")
+
+
+@app.post("/api/untrack")
+@_require_key
+def api_untrack():
+    vsl, mft = _query_from_body()
+    with _registry_lock:
+        removed = _poll_registry.pop((vsl, mft), None) is not None
+        _save_state()
+    log.info(f"[web] Untrack {vsl}/{mft} ({'removed' if removed else 'not tracked'})")
+    return jsonify(removed=removed)
+
+
+@app.post("/api/search")
+@_require_key
+def api_search():
+    """One-off query for debugging: no tracking, no LINE messages."""
+    vsl, mft = _query_from_body()
+    if not vsl:
+        return jsonify(error="通關號碼和艙號只能是英數字"), 400
+    started = time.time()
+    found, msg, records = search_container(vsl, mft)
+    log.info(f"[web] Search {vsl}/{mft}: {'found' if found else 'not found'} in {time.time() - started:.0f}s")
+    return jsonify(found=found, message=msg, records=records, seconds=round(time.time() - started, 1))
+
+
+@app.get("/api/logs")
+@_require_key
+def api_logs():
+    lines = min(int(request.args.get("lines", 200)), 1000)
+    try:
+        text = LOG_FILE.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        text = ""
+    return jsonify(lines=text.splitlines()[-lines:])
+
+
+@app.post("/api/webhook/sync")
+@_require_key
+def api_webhook_sync():
+    ok = bool(_ngrok_url) and update_line_webhook(_ngrok_url)
+    return jsonify(ok=ok, webhook=_webhook_status)
 
 # ── ngrok ─────────────────────────────────────────────────────────────────────
 
@@ -317,6 +470,7 @@ def start_ngrok() -> Optional[subprocess.Popen]:
 def update_line_webhook(base_url: str) -> bool:
     """Point the LINE channel's webhook at base_url/callback and verify it. Returns True on success."""
     endpoint = f"{base_url}/callback"
+    ok, message = False, ""
     try:
         with ApiClient(_line_config) as api_client:
             api = MessagingApi(api_client)
@@ -327,21 +481,49 @@ def update_line_webhook(base_url: str) -> bool:
             else:
                 log.info(f"[line] Webhook URL already set → {endpoint}")
             if not current.active:
-                log.warning("[line] 'Use webhook' is OFF in the LINE Developers console; messages won't arrive")
+                message = "LINE Developers 後台的「Use webhook」沒有開，訊息不會送到 bot"
+                log.warning(f"[line] {message}")
             result = api.test_webhook_endpoint(TestWebhookEndpointRequest(endpoint=endpoint))
         if result.success:
             log.info("[line] Webhook test OK")
-            return True
-        log.warning(f"[line] Webhook test failed: {result.status_code} {result.reason} {result.detail}")
+            ok = True
+        else:
+            message = f"Webhook 測試失敗：{result.status_code} {result.reason} {result.detail}"
+            log.warning(f"[line] {message}")
     except Exception as exc:
-        log.warning(f"[line] Could not update webhook: {exc}")
+        message = f"無法更新 webhook：{exc}"
+        log.warning(f"[line] {message}")
+    _webhook_status.update(endpoint=endpoint, ok=ok, checkedAt=_now(), message=message)
+    return ok
+
+
+def _publish_bot_url(url: str) -> bool:
+    """Write data/bot.json and push the site to GitHub Pages so the web page finds the new ngrok URL."""
+    BOT_INFO_FILE.parent.mkdir(exist_ok=True)
+    BOT_INFO_FILE.write_text(json.dumps({"url": url, "updatedAt": _now()}), encoding="utf-8")
+    if not _publish_enabled:
+        log.info(f"[pages] Wrote {BOT_INFO_FILE.name} (--no-publish: not uploading)")
+        return True
+    try:
+        result = subprocess.run(
+            ["node", "scripts/publish.mjs"], cwd=BASE_DIR, capture_output=True,
+            encoding="utf-8", errors="replace", timeout=180, creationflags=NO_WINDOW,
+        )
+    except Exception as exc:
+        log.warning(f"[pages] Could not publish bot URL: {exc}")
+        return False
+    if result.returncode == 0:
+        log.info("[pages] Published bot URL to GitHub Pages")
+        return True
+    log.warning(f"[pages] Publish failed: {(result.stderr or result.stdout).strip()[-300:]}")
     return False
 
 
 def _keep_tunnel_alive(flask_thread: threading.Thread) -> None:
-    """Main loop: restart ngrok if its tunnel disappears, and keep LINE's webhook URL in sync."""
+    """Main loop: restart ngrok if its tunnel disappears; keep LINE's webhook and the web page's URL in sync."""
     global _ngrok_proc
     synced_url: Optional[str] = None
+    published_url: Optional[str] = None
     while True:
         if not flask_thread.is_alive():
             raise RuntimeError("Flask server stopped")
@@ -356,7 +538,9 @@ def _keep_tunnel_alive(flask_thread: threading.Thread) -> None:
                 log.warning(f"[ngrok] {exc} Retrying...")
         if url and url != synced_url and update_line_webhook(url):
             synced_url = url
-        time.sleep(TUNNEL_CHECK_INTERVAL if url and url == synced_url else 10)
+        if url and url != published_url and _publish_bot_url(url):
+            published_url = url
+        time.sleep(TUNNEL_CHECK_INTERVAL if url else 10)
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
@@ -553,6 +737,7 @@ if __name__ == "__main__":
         log.info(f"[main] Port {PORT} is already in use; another bot is probably running. Exiting.")
         sys.exit(0)
 
+    _started_at = _now()
     # Start Flask first so LINE's webhook test can reach /callback
     flask_thread = threading.Thread(target=_run_flask, daemon=True, name="flask")
     flask_thread.start()

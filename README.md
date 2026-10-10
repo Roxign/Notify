@@ -74,7 +74,24 @@ LINE 傳「通關151197 艙號0169」給 bot，它會每分鐘查一次關港貿
 
    之後每次登入 Windows 都會自動啟動。要馬上啟動：`schtasks /Run /TN LINE報單追蹤bot`；移除排程：`python bot.py --remove-task`。
 
-手動在終端機執行 `python bot.py` 也可以（會同時在畫面上顯示紀錄）；背景版本已在跑的話，手動執行的會直接結束。
+手動在終端機執行 `python bot.py` 也可以（會同時在畫面上顯示紀錄）；背景版本已在跑的話，手動執行的會直接結束。除錯時可以加 `--no-publish`，不會把網址上傳到 GitHub。
+
+### 網頁的「通關查詢」分頁
+
+網頁上方的大按鈕可以切換「7-11 商品卡」和「通關查詢」。通關查詢分頁直接連到電腦上的 bot：
+
+- 輸入通關號碼和艙號 →「加入追蹤」（有變化用 LINE 通知 `.env` 裡的 `DEV_USER_IDS`）或「只查一次」（除錯用，不追蹤、不發 LINE，會列出所有原始紀錄）
+- 看追蹤中的報單、停止追蹤
+- 除錯資訊：bot 網址、LINE webhook 狀態、紀錄檔，以及「重新設定 LINE webhook」按鈕
+
+運作方式：bot 每次拿到新的 ngrok 網址，除了更新 LINE webhook，也會寫進 `data/bot.json` 並推到 gh-pages，網頁就是從這裡找到 bot。
+
+安全性：網頁是公開的，所以 bot 的 `/api/*` 都要密碼（`.env` 的 `WEB_API_KEY`），而且只接受 `https://roxign.github.io` 和本機預覽的請求。登入方式：
+
+- 在 LINE **私訊** bot「網頁」，會回一個已帶密碼的連結（只有 `DEV_USER_IDS` 裡的人會收到，群組裡不會回）
+- 或打開網頁的通關查詢分頁，輸入 `.env` 裡的 `WEB_API_KEY`
+
+用 `npm run serve` 本機預覽時，網頁會直接連 `http://localhost:5000`，不經過 ngrok。
 
 ## 注意事項
 
