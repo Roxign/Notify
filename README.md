@@ -2,7 +2,7 @@
 
 打開網頁就能看到蝦皮上**低於面額**的 7-11 商品卡，按折數排好，點一下直接到商品頁。
 
-**網頁：https://h3902340.github.io/Notify/**
+**網頁：https://roxign.github.io/Notify/**
 
 ## 運作方式
 
@@ -50,13 +50,7 @@ AI 的判斷只是補充：它給的面額一定要真的出現在標題或規�
 
 - `main` 分支放程式碼；`gh-pages` 分支放網頁和資料，每次 `npm run update` 都會用一個新的 commit 整個覆蓋。
 - Repo 的 **Settings → Pages** 設定為 **Deploy from a branch → gh-pages / (root)**。
-- 這台電腦的 Git 預設憑證是另一個 GitHub 帳號，所以這個 repo 另外設定成用 `gh` 登入的帳號推送：
-
-  ```bash
-  git config --local --get-all credential.https://github.com.helper
-  ```
-
-  應該會看到 `!gh auth git-credential`。如果 `gh` 登出了，推送會失敗，執行 `gh auth login` 重新登入即可。
+- 推送用的是這台電腦 Git 存的 GitHub 帳號（Roxign）。
 
 ## 注意事項
 
