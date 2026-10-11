@@ -56,7 +56,7 @@ AI 的判斷只是補充：它給的面額一定要真的出現在標題或規�
 
 LINE 傳「通關151197 艙號0169」給 bot，它會每分鐘查一次關港貿單一窗口的報單狀態，有變化就推播，放行後停止。
 
-- 在背景執行：登入 Windows 時由工作排程器用 `pythonw` 啟動（沒有視窗），當掉 1 分鐘後自動重啟。
+- 在背景執行：登入 Windows 時由工作排程器用 `pythonw` 啟動（沒有視窗）；排程每 5 分鐘檢查一次，bot 當掉的話 5 分鐘內會重新啟動（已在跑時不會重複開）。
 - ngrok：啟動時沿用已在跑的 tunnel，沒有就自己開；之後每分鐘檢查，tunnel 斷了會重開。
 - LINE webhook：拿到 ngrok 網址後，透過 Messaging API 自動把 webhook 改成 `<ngrok 網址>/callback` 並測試，不用再去 LINE Developers 後台手動貼。
 - 追蹤中的報單會存到 `E:\line-bot\tracking.json`，電腦重開後會接著追蹤。

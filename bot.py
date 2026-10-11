@@ -646,9 +646,14 @@ def search_container(vsl_reg_no: str, mft_no: str) -> Tuple[bool, str, list]:
 # ── Background task (Windows Task Scheduler) ──────────────────────────────────
 
 def _install_task() -> None:
-    """Run this bot hidden (pythonw) at Windows logon, restarting it if it crashes."""
+    """Run this bot hidden (pythonw) at Windows logon, and start it again within 5 minutes if it crashes.
+
+    RestartOnFailure alone doesn't cover a process that exits with an error, so a 5-minute repeating
+    trigger does the restarting; IgnoreNew makes it a no-op while the bot is running.
+    """
     user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ['USERNAME']}"
     pythonw = Path(sys.executable).with_name("pythonw.exe")
+    start = datetime.now().replace(second=0, microsecond=0).isoformat()
     esc = lambda s: str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     xml = f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -660,6 +665,14 @@ def _install_task() -> None:
       <Enabled>true</Enabled>
       <UserId>{esc(user)}</UserId>
     </LogonTrigger>
+    <TimeTrigger>
+      <StartBoundary>{start}</StartBoundary>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -692,7 +705,7 @@ def _install_task() -> None:
         path = Path(tmp) / "task.xml"
         path.write_text(xml, encoding="utf-16")
         subprocess.run(["schtasks", "/Create", "/TN", TASK_NAME, "/XML", str(path), "/F"], check=True)
-    print(f"已建立排程「{TASK_NAME}」：登入 Windows 時自動在背景啟動，當掉會在 1 分鐘後重啟。")
+    print(f"已建立排程「{TASK_NAME}」：登入 Windows 時自動在背景啟動，當掉的話 5 分鐘內會重新啟動。")
     print(f"現在就啟動：schtasks /Run /TN {TASK_NAME}")
 
 
