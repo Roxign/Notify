@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Notify</title>
+  <meta name="description" content="蝦皮 7-11 商品卡特價雷達與通關報單追蹤">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔔</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="wrap">
+    <nav class="tabs" role="tablist" aria-label="功能">
+      <button type="button" class="tab" role="tab" id="tab-cards" data-view="cards" aria-controls="view-cards">
+        <span class="tab-title">7-11 商品卡</span>
+        <span class="tab-sub">蝦皮低於面額的特價</span>
+      </button>
+      <button type="button" class="tab" role="tab" id="tab-customs" data-view="customs" aria-controls="view-customs">
+        <span class="tab-title">通關查詢</span>
+        <span class="tab-sub">報單放行追蹤</span>
+      </button>
+    </nav>
+
+    <section class="notice" id="app-tip" hidden></section>
+
+    <div class="view" id="view-cards" role="tabpanel" aria-labelledby="tab-cards">
+      <header class="top">
+        <div>
+          <h1>7-11 商品卡特價雷達</h1>
+          <p class="updated" id="updated">讀取中…</p>
+        </div>
+        <button type="button" class="btn" id="refresh">重新整理</button>
+      </header>
+
+      <section class="notice" id="notice" hidden></section>
+
+      <section class="stats" id="stats" hidden>
+        <div class="stat stat-hot"><span class="stat-num" id="stat-deals">–</span><span class="stat-label">件低於面額</span></div>
+        <div class="stat"><span class="stat-num" id="stat-best">–</span><span class="stat-label">目前最低折數</span></div>
+        <div class="stat"><span class="stat-num" id="stat-total">–</span><span class="stat-label">件商品卡</span></div>
+      </section>
+
+      <section class="controls" id="controls" hidden>
+        <input type="search" id="q" placeholder="篩選標題，例如 1000、官方" aria-label="篩選標題">
+        <select id="sort" aria-label="排序">
+          <option value="ratio">折數低→高</option>
+          <option value="price">價格低→高</option>
+          <option value="sales">銷量高→低</option>
+        </select>
+      </section>
+
+      <section id="deals-section" hidden>
+        <h2>低於面額</h2>
+        <ul class="list" id="deals"></ul>
+        <p class="empty" id="deals-empty" hidden>目前沒有低於面額的 7-11 商品卡，晚點再來看看。</p>
+      </section>
+
+      <section id="others-section" hidden>
+        <details>
+          <summary>其他 7-11 商品卡（<span id="others-count">0</span>）</summary>
+          <ul class="list" id="others"></ul>
+        </details>
+      </section>
+
+      <section class="quick">
+        <h2>直接到蝦皮搜尋</h2>
+        <p class="hint">依價格由低到高排序</p>
+        <div class="chips" id="quick"></div>
+      </section>
+
+      <footer class="foot">
+        <p id="ios-tip" hidden>iPhone 點商品還是打開網頁的話：長按商品，選「在"蝦皮購物"中打開」一次，之後就會直接開 App。</p>
+        <p>面額是從商品標題自動判斷的，可能會判斷錯，下單前請點進商品確認面額與賣家評價。遠低於面額的「序號」很可能是詐騙。</p>
+        <p>資料來源：家裡的電腦每小時用瀏覽器讀取一次蝦皮搜尋結果。<span id="ai-info"></span></p>
+      </footer>
+    </div>
+
+    <div class="view" id="view-customs" role="tabpanel" aria-labelledby="tab-customs" hidden>
+      <header class="top">
+        <div>
+          <h1>通關查詢</h1>
+          <p class="updated" id="bot-updated">連線中…</p>
+        </div>
+        <button type="button" class="btn" id="bot-refresh">重新整理</button>
+      </header>
+
+      <section class="notice" id="bot-notice" hidden></section>
+
+      <section class="card" id="key-card" hidden>
+        <h2>輸入 bot 密碼</h2>
+        <p class="hint">在 LINE 私訊 bot「網頁」可以拿到自動登入的連結；或看電腦上 .env 檔案裡的 WEB_API_KEY。</p>
+        <form class="row" id="key-form">
+          <input type="password" id="key-input" autocomplete="current-password" required aria-label="bot 密碼" placeholder="密碼">
+          <button type="submit" class="btn primary">確定</button>
+        </form>
+      </section>
+
+      <div id="bot-main" hidden>
+        <section class="card">
+          <h2>查詢報單</h2>
+          <form class="track-form" id="track-form">
+            <label>通關號碼<input name="vsl" id="vsl" inputmode="numeric" autocomplete="off" required pattern="[A-Za-z0-9]{1,20}" placeholder="例如 151197"></label>
+            <label>艙號<input name="mft" id="mft" inputmode="numeric" autocomplete="off" required pattern="[A-Za-z0-9]{1,20}" placeholder="例如 0169"></label>
+            <div class="row">
+              <button type="submit" class="btn primary" data-action="track">加入追蹤</button>
+              <button type="submit" class="btn" data-action="search">只查一次</button>
+            </div>
+          </form>
+          <p class="hint">加入追蹤後每分鐘查一次，有變化會用 LINE 通知，放行後自動停止。「只查一次」不會追蹤也不會發 LINE，用來除錯。</p>
+          <div id="search-result" hidden></div>
+        </section>
+
+        <section>
+          <h2>追蹤中（<span id="tracking-count">0</span>）</h2>
+          <ul class="list" id="tracking"></ul>
+          <p class="empty" id="tracking-empty" hidden>目前沒有追蹤中的報單。</p>
+        </section>
+
+        <section class="card">
+          <h2>除錯資訊</h2>
+          <dl class="info" id="bot-info"></dl>
+          <div class="row">
+            <button type="button" class="btn" id="webhook-sync">重新設定 LINE webhook</button>
+            <button type="button" class="btn" id="logout">登出</button>
+          </div>
+        </section>
+
+        <details class="log-box" id="log-box">
+          <summary>紀錄檔（最近 200 行）</summary>
+          <pre class="log" id="log">讀取中…</pre>
+        </details>
+      </div>
+    </div>
+  </main>
+  <script src="app.js"></script>
+  <script src="customs.js"></script>
+</body>
+</html>
